@@ -1,7 +1,22 @@
-const fs = require('fs');
-const path = require('path');
-const yaml = require('js-yaml');
-const objtools = require('objtools');
+import fs from 'fs';
+import path from 'path';
+import yaml from 'js-yaml';
+import * as objtools from 'objtools';
+
+export type LittleConfOptions = {
+	argv?: { [argKey: string]: any },
+	environmentOverride?: string,
+	cliArgumentEnvironment?: string,
+	rootDir?: string,
+	envVariableEnvironment?: string,
+	defaultEnvironment?: string,
+	defaultsFilename?: string,
+	filenameOverride?: string,
+	filename?: string,
+	cliArgumentFile?: string,
+	envVariableFile?: string,
+	projectName?: string
+};
 
 /**
  * Class containing main logic for littleconf.
@@ -30,10 +45,15 @@ const objtools = require('objtools');
  *     config file path.  Defaults to 'c'
  *   @param {String} [options.envVariableFile] - The name of the environment variable to use to supply
  *     the config file path.  Defaults to PROJECT_NAME_CONFIG
+ *   @param {String} [options.projectName] - Name of project to use.  Defaults to autodetect from package.json.
  */
-class LittleConf {
+export class LittleConf {
+	options: LittleConfOptions;
+	projectName?: string;
+	environment?: string;
+	rootDir?: string;
 
-	constructor(options = {}) {
+	constructor(options: LittleConfOptions = {}) {
 		this.options = options;
 	}
 
@@ -44,7 +64,7 @@ class LittleConf {
 	 * @private
 	 * @return {String|Undefined}
 	 */
-	_getCLIArgument(name) {
+	_getCLIArgument(name: string): string | undefined {
 		if (this.options.argv) {
 			return this.options.argv[name];
 		} else {
@@ -59,16 +79,16 @@ class LittleConf {
 	 * @private
 	 * @return {String}
 	 */
-	_findConfigEnvironment() {
+	_findConfigEnvironment(): string {
 		// If an environment override option is supplied, use that
 		if (this.options.environmentOverride) {
 			return this.options.environmentOverride;
 		}
 		// Check if the --config-env command-line argument is given
-		let cliEnv = this._getCLIArgument(this.options.cliArgumentEnvironment || 'config-env');
+		let cliEnv: string | undefined = this._getCLIArgument(this.options.cliArgumentEnvironment || 'config-env');
 		if (cliEnv) return cliEnv;
 		// Check the environment variable corresponding to the project name (ie, PROJECT_NAME_ENV)
-		let envVarName = this.options.envVariableEnvironment ||
+		let envVarName: string = this.options.envVariableEnvironment ||
 			(this.getProjectName().toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_ENV');
 		if (process.env[envVarName]) return process.env[envVarName];
 		// Check the NODE_ENV environment variable
@@ -84,17 +104,17 @@ class LittleConf {
 	 * @private
 	 * @return {String}
 	 */
-	_findProjectName() {
-		let name;
+	_findProjectName(): string {
+		let name: string;
 		// Check project name option
 		if (this.options.projectName) {
 			name = this.options.projectName;
 		} else {
 			// Get it out of package.json
-			let pkgPath = path.join(this.getProjectRootDir(), 'package.json');
+			let pkgPath: string = path.join(this.getProjectRootDir(), 'package.json');
 			if (fs.existsSync(pkgPath)) {
-				let pkg = require(pkgPath);
-				if (pkg.name) name =  pkg.name;
+				let pkg = JSON.parse(fs.readFileSync(pkgPath).toString('utf8'));
+				if (pkg.name) name = pkg.name;
 			}
 		}
 		if (!name) return 'project';
@@ -111,10 +131,10 @@ class LittleConf {
 	 * @private
 	 * @return {String}
 	 */
-	_findProjectRootDir() {
+	_findProjectRootDir(): string {
 		if (this.options.rootDir) return this.options.rootDir;
 
-		let mainModuleDir = path.resolve(path.dirname(require.main.filename));
+		let mainModuleDir = path.resolve(process.cwd());
 		let dir = mainModuleDir;
 		for (;;) {
 			if (fs.existsSync(path.join(dir, 'package.json'))) {
@@ -133,7 +153,7 @@ class LittleConf {
 	 * @method getProjectName
 	 * @return {String}
 	 */
-	getProjectName() {
+	getProjectName(): string {
 		if (this.projectName) return this.projectName;
 		this.projectName = this._findProjectName();
 		return this.projectName;
@@ -145,7 +165,7 @@ class LittleConf {
 	 * @method getConfigEnvironment
 	 * @return {String}
 	 */
-	getConfigEnvironment() {
+	getConfigEnvironment(): string {
 		if (this.environment) return this.environment;
 		this.environment = this._findConfigEnvironment();
 		return this.environment;
@@ -157,7 +177,7 @@ class LittleConf {
 	 * @method getProjectRootDir
 	 * @return {String}
 	 */
-	getProjectRootDir() {
+	getProjectRootDir(): string {
 		if (this.rootDir) return this.rootDir;
 		this.rootDir = this._findProjectRootDir();
 		return this.rootDir;
@@ -171,11 +191,12 @@ class LittleConf {
 	 * @param {String} filename
 	 * @return {Object}
 	 */
-	_loadFile(filename) {
+	async _loadFile(filename: string): Promise<any> {
 		if (!filename) return {};
 		if (!fs.existsSync(filename)) return {};
 		if (/\.js$/.test(filename)) {
-			return require(filename);
+			let m = await import(filename);
+			return m;
 		} else {
 			let data = fs.readFileSync(filename);
 			let result = yaml.safeLoad(data, 'utf8');
@@ -184,10 +205,10 @@ class LittleConf {
 		}
 	}
 
-	_mergeConfig(...configs) {
+	_mergeConfig(...configs: any[]): any {
 		let merged = objtools.merge({}, ...configs);
 		// Iterate over the object and delete null values
-		function removeNulls(obj) {
+		function removeNulls(obj: any): void {
 			if (!obj || typeof obj !== 'object') return;
 			for (let key in obj) {
 				if (obj[key] === null) {
@@ -201,7 +222,7 @@ class LittleConf {
 		return merged;
 	}
 
-	_resolvePath(filenames, searchPaths) {
+	_resolvePath(filenames: string[] | string, searchPaths: string[] | string): string | null {
 		let filenamesArray = filenames;
 		if (!Array.isArray(filenamesArray)) filenamesArray = [ filenamesArray ];
 		if (!Array.isArray(searchPaths)) searchPaths = [ searchPaths ];
@@ -220,9 +241,9 @@ class LittleConf {
 	 * @method loadConfig
 	 * @return {Object}
 	 */
-	loadConfig() {
+	async loadConfig(): Promise<any> {
 		// Load the config defaults file
-		let defaultsFilename = this.options.defaultsFilename;
+		let defaultsFilename: string | string[] | undefined = this.options.defaultsFilename;
 		if (!defaultsFilename) {
 			defaultsFilename = [
 				this.getProjectName() + '-defaults.conf',
@@ -230,10 +251,11 @@ class LittleConf {
 			];
 		}
 		defaultsFilename = this._resolvePath(defaultsFilename, this.getProjectRootDir());
-		let defaultsConfig = this._loadFile(defaultsFilename);
+		let defaultsConfig: any = await this._loadFile(defaultsFilename);
+
 
 		// Load the main config file
-		let mainFilename = this.options.filenameOverride;
+		let mainFilename: string | string[] | undefined = this.options.filenameOverride;
 		if (!mainFilename) {
 			mainFilename = this._getCLIArgument(this.options.cliArgumentFile || 'c');
 		}
@@ -251,9 +273,9 @@ class LittleConf {
 				this.getProjectName() + '.conf.js'
 			];
 		}
-		const configSearchPaths = [ this.getProjectRootDir(), '/etc' ];
+		const configSearchPaths: string[] = [ this.getProjectRootDir(), '/etc' ];
 		mainFilename = this._resolvePath(mainFilename, configSearchPaths);
-		let mainConfig = mainFilename ? this._loadFile(mainFilename) : {};
+		let mainConfig: any = mainFilename ? (await this._loadFile(mainFilename)) : {};
 
 		// Find environment variable config option overrides
 		let overrides = {};
@@ -275,7 +297,7 @@ class LittleConf {
 		}
 
 		// Merge the configs together
-		let env = this.getConfigEnvironment();
+		let env: string = this.getConfigEnvironment();
 		let merged = this._mergeConfig(
 			defaultsConfig,
 			objtools.getPath(defaultsConfig, 'environments.' + env) || {},
@@ -290,5 +312,4 @@ class LittleConf {
 
 }
 
-module.exports = LittleConf;
 

@@ -3,7 +3,8 @@
 LittleConf is a simple library for loading project configuration files.
 
 ```js
-const config = require('littleconf').getConfig();
+import { getConfig } from 'littleconf';
+const config = await getConfig();
 ```
 
 This will load a YAML configuration file named `<PackageName>.conf` or `<PackageName>.conf.js` from the package root directory.  By default, the package name is discovered from the project's package.json file.
