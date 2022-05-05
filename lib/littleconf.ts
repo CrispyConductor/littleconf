@@ -196,7 +196,7 @@ export class LittleConf {
 		if (!fs.existsSync(filename)) return {};
 		if (/\.js$/.test(filename)) {
 			let m = await import(filename);
-			return m;
+			return m.default;
 		} else {
 			let data = fs.readFileSync(filename);
 			let result = yaml.safeLoad(data, 'utf8');
